@@ -6,13 +6,23 @@ st.set_page_config(page_title="Dataset EDA & Insights", layout="wide")
 st.title("🔬 Deep Exploratory Data Analysis & Insights")
 
 # ---------------------------------------------------------
-# 1. FIXED DATA LOAD & FEATURE SYNTHESIS
+# 1. FIXED DATA LOAD WITH MULTI-ENCODING FALLBACK
 # ---------------------------------------------------------
-# Direct path to the bundled repository dataset
 DATA_FILE = "Site_information_basic.csv"
 
+def load_csv_safe(file_path):
+    """Attempts loading CSV across common encodings to avoid byte decoding crashes."""
+    encodings = ['utf-8', 'cp1252', 'latin1', 'iso-8859-1']
+    for enc in encodings:
+        try:
+            return pd.read_csv(file_path, encoding=enc)
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+    # Final fallback replacing bad characters
+    return pd.read_csv(file_path, encoding='utf-8', encoding_errors='replace')
+
 try:
-    df = pd.read_csv(DATA_FILE)
+    df = load_csv_safe(DATA_FILE)
 except Exception as e:
     st.error(f"Error loading '{DATA_FILE}': {e}")
     st.stop()
@@ -29,7 +39,7 @@ for tc in text_cols:
 detected_id_cols = []
 for c in df.columns:
     is_unique = (df[c].nunique() == len(df)) and (len(df) > 1)
-    has_id_keyword = any(k in c.lower() for k in ["id", "ps number", "ps_number", "serial", "index", "code", "guid"])
+    has_id_keyword = any(k in str(c).lower() for k in ["id", "ps number", "ps_number", "serial", "index", "code", "guid"])
     if is_unique or has_id_keyword:
         detected_id_cols.append(c)
 
@@ -41,7 +51,7 @@ ignored_cols = st.sidebar.multiselect(
     help="These columns will be excluded from statistical profiles, correlations, and frequency distributions."
 )
 
-analysis_df = df.drop(columns=ignored_cols)
+analysis_df = df.drop(columns=ignored_cols, errors='ignore')
 numeric_cols = analysis_df.select_dtypes(include=["number"]).columns.tolist()
 qualitative_cols = analysis_df.select_dtypes(include=["object", "category"]).columns.tolist()
 
@@ -94,24 +104,24 @@ if numeric_cols:
             "Outlier (%)": f"{(outlier_count / len(series) * 100):.1f}%"
         })
     
-    quant_df = pd.DataFrame(quant_metrics).set_index("Column")
-    
-    st.subheader("Parametric, Percentile & Outlier Threshold Metrics")
-    st.dataframe(quant_df.style.format({
-        "Mean": "{:,.2f}", 
-        "Std Dev": "{:,.2f}", 
-        "CV": "{:.3f}",
-        "Min": "{:,.2f}", 
-        "Q1 (25%)": "{:,.2f}", 
-        "Median / Q2 (50%)": "{:,.2f}", 
-        "Q3 (75%)": "{:,.2f}", 
-        "Max": "{:,.2f}",
-        "IQR": "{:,.2f}", 
-        "Lower Fence (Q1 - 1.5×IQR)": "{:,.2f}", 
-        "Upper Fence (Q3 + 1.5×IQR)": "{:,.2f}", 
-        "Skewness": "{:.2f}", 
-        "Kurtosis": "{:.2f}"
-    }), use_container_width=True)
+    if quant_metrics:
+        quant_df = pd.DataFrame(quant_metrics).set_index("Column")
+        st.subheader("Parametric, Percentile & Outlier Threshold Metrics")
+        st.dataframe(quant_df.style.format({
+            "Mean": "{:,.2f}", 
+            "Std Dev": "{:,.2f}", 
+            "CV": "{:.3f}",
+            "Min": "{:,.2f}", 
+            "Q1 (25%)": "{:,.2f}", 
+            "Median / Q2 (50%)": "{:,.2f}", 
+            "Q3 (75%)": "{:,.2f}", 
+            "Max": "{:,.2f}",
+            "IQR": "{:,.2f}", 
+            "Lower Fence (Q1 - 1.5×IQR)": "{:,.2f}", 
+            "Upper Fence (Q3 + 1.5×IQR)": "{:,.2f}", 
+            "Skewness": "{:.2f}", 
+            "Kurtosis": "{:.2f}"
+        }), use_container_width=True)
 
     # Correlation Suite
     st.subheader("🔗 Correlation Analysis")
@@ -153,7 +163,8 @@ if qualitative_cols:
         n_unique = analysis_df[col].nunique(dropna=True)
         missing_count = analysis_df[col].isnull().sum()
         
-        mode_val = analysis_df[col].mode()[0] if not analysis_df[col].mode().empty else "N/A"
+        mode_series = analysis_df[col].mode()
+        mode_val = mode_series[0] if not mode_series.empty else "N/A"
         mode_count = (analysis_df[col] == mode_val).sum() if mode_val != "N/A" else 0
         dominance_ratio = (mode_count / n_total) if n_total > 0 else 0
         
@@ -206,14 +217,15 @@ insights = st.text_area("Record your statistical takeaways, anomalies, and hypot
 col1, col2 = st.columns(2)
 with col1:
     if st.button("💾 Overwrite Dataset"):
-        edited_df.to_csv(DATA_FILE, index=False)
+        # Save back with UTF-8 encoding
+        edited_df.to_csv(DATA_FILE, index=False, encoding='utf-8')
         st.success(f"'{DATA_FILE}' successfully updated!")
 
 with col2:
-    csv_bytes = edited_df.to_csv(index=False).encode("utf-8")
+    csv_bytes = edited_df.to_csv(index=False, encoding='utf-8').encode("utf-8")
     st.download_button(
         label="📥 Download Cleaned Dataset (CSV)",
         data=csv_bytes,
-        file_name="defects_data_cleaned.csv",
+        file_name="site_information_cleaned.csv",
         mime="text/csv"
     )
