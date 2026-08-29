@@ -9,7 +9,7 @@ st.title("🔬 Deep Exploratory Data Analysis & Insights")
 # 1. FIXED DATA LOAD & FEATURE SYNTHESIS
 # ---------------------------------------------------------
 # Direct path to the bundled repository dataset
-DATA_FILE = "X-ray_Micro-Tomography_micro-CT_rows.csv"
+DATA_FILE = "Site_information_basic.csv"
 
 try:
     df = pd.read_csv(DATA_FILE)
