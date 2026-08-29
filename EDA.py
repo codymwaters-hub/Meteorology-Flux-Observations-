@@ -18,7 +18,6 @@ def load_csv_safe(file_path):
             return pd.read_csv(file_path, encoding=enc)
         except (UnicodeDecodeError, UnicodeError):
             continue
-    # Final fallback replacing bad characters
     return pd.read_csv(file_path, encoding='utf-8', encoding_errors='replace')
 
 try:
@@ -27,11 +26,15 @@ except Exception as e:
     st.error(f"Error loading '{DATA_FILE}': {e}")
     st.stop()
 
-# Auto-generate word counts for large descriptive text fields
-text_cols = [c for c in df.select_dtypes(include=["object"]).columns if df[c].astype(str).str.len().mean() > 50]
+# Auto-generate word counts safely using vectorized pandas string methods
+text_cols = [
+    c for c in df.select_dtypes(include=["object", "string"]).columns 
+    if df[c].fillna("").astype(str).str.len().mean() > 50
+]
 for tc in text_cols:
-    if f"{tc}_word_count" not in df.columns:
-        df[f"{tc}_word_count"] = df[tc].astype(str).apply(lambda x: len(x.split()))
+    count_col = f"{tc}_word_count"
+    if count_col not in df.columns:
+        df[count_col] = df[tc].fillna("").astype(str).str.split().str.len()
 
 # ---------------------------------------------------------
 # 2. AUTOMATIC PRIMARY KEY & IDENTIFIER EXCLUSION
@@ -206,26 +209,7 @@ if qualitative_cols:
         st.info("No categorical columns with under 30 unique categories for distribution charting.")
 
 # ---------------------------------------------------------
-# 5. INTERACTIVE DATA TABLE, INSIGHTS & EXPORT
+# 5. READ-ONLY DATA VIEWER
 # ---------------------------------------------------------
-st.header("✏️ Interactive Workspace & Export")
-edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
-
-st.subheader("📝 Analyst Notes & Hypotheses")
-insights = st.text_area("Record your statistical takeaways, anomalies, and hypotheses:", placeholder="Document your analytical insights here...")
-
-col1, col2 = st.columns(2)
-with col1:
-    if st.button("💾 Overwrite Dataset"):
-        # Save back with UTF-8 encoding
-        edited_df.to_csv(DATA_FILE, index=False, encoding='utf-8')
-        st.success(f"'{DATA_FILE}' successfully updated!")
-
-with col2:
-    csv_bytes = edited_df.to_csv(index=False, encoding='utf-8').encode("utf-8")
-    st.download_button(
-        label="📥 Download Cleaned Dataset (CSV)",
-        data=csv_bytes,
-        file_name="site_information_cleaned.csv",
-        mime="text/csv"
-    )
+st.header("📄 Complete Dataset Records")
+st.dataframe(df, use_container_width=True, hide_index=True)
